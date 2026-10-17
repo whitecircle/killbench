@@ -410,6 +410,9 @@ async def collect_jobs(
                         parsed = empty_parsed("request_error", result.get("error", ""), is_refusal=False)
                     result["parsed"] = parsed
 
+                elif skip_gemini_parse:
+                    result["parsed"] = build_free_text_fallback(result)
+
                 # Incremental flush per result
                 if inc_file:
                     inc_file.write(json.dumps({
@@ -441,6 +444,7 @@ async def collect_jobs(
     # For freetext mode, run Gemini parsing pass
     if response_mode != "structured":
         gemini_parser = None
+        parser_map: dict[int, dict[str, Any]] = {}
         if not skip_gemini_parse:
             connector2 = aiohttp.TCPConnector(limit=concurrency + 20)
             async with aiohttp.ClientSession(connector=connector2) as session2:
@@ -453,7 +457,6 @@ async def collect_jobs(
                     if result.get("success") and (result.get("content") or "").strip()
                 ]
 
-                parser_map: dict[int, dict[str, Any]] = {}
                 if parse_candidates:
                     ppbar = tqdm(total=len(parse_candidates), desc="GEMINI-PARSE")
 
@@ -471,27 +474,27 @@ async def collect_jobs(
                         ppbar.update(1)
                     ppbar.close()
 
-                for idx, result in enumerate(all_results):
-                    if idx not in parser_map:
-                        result["parsed"] = build_free_text_fallback(result)
-                        continue
-                    parsed_result = parser_map[idx]
-                    if parsed_result.get("is_refusal"):
-                        parsed = empty_parsed("gemini_reparse", result.get("content", ""), is_refusal=True)
-                        parsed["confidence"] = "gemini_reparse"
-                        parsed["raw"] = parsed_result.get("raw", "")
-                    elif isinstance(parsed_result.get("displayed_choice"), int):
-                        parsed = empty_parsed("gemini_reparse", result.get("content", ""), is_refusal=False)
-                        parsed["confidence"] = "gemini_reparse"
-                        parsed["raw"] = parsed_result.get("raw", "")
-                        parsed = enrich_with_original_choice(parsed, result["metadata"], parsed_result["displayed_choice"])
-                    else:
-                        parsed = empty_parsed(parsed_result.get("parse_method", "gemini_reparse_error"), result.get("content", ""), is_refusal=False)
-                        parsed["confidence"] = "gemini_reparse"
-                        parsed["raw"] = parsed_result.get("raw", "")
-                        if parsed_result.get("error"):
-                            parsed["error"] = parsed_result["error"]
-                    result["parsed"] = parsed
+        for idx, result in enumerate(all_results):
+            if idx not in parser_map:
+                result["parsed"] = build_free_text_fallback(result)
+                continue
+            parsed_result = parser_map[idx]
+            if parsed_result.get("is_refusal"):
+                parsed = empty_parsed("gemini_reparse", result.get("content", ""), is_refusal=True)
+                parsed["confidence"] = "gemini_reparse"
+                parsed["raw"] = parsed_result.get("raw", "")
+            elif isinstance(parsed_result.get("displayed_choice"), int):
+                parsed = empty_parsed("gemini_reparse", result.get("content", ""), is_refusal=False)
+                parsed["confidence"] = "gemini_reparse"
+                parsed["raw"] = parsed_result.get("raw", "")
+                parsed = enrich_with_original_choice(parsed, result["metadata"], parsed_result["displayed_choice"])
+            else:
+                parsed = empty_parsed(parsed_result.get("parse_method", "gemini_reparse_error"), result.get("content", ""), is_refusal=False)
+                parsed["confidence"] = "gemini_reparse"
+                parsed["raw"] = parsed_result.get("raw", "")
+                if parsed_result.get("error"):
+                    parsed["error"] = parsed_result["error"]
+            result["parsed"] = parsed
 
     return all_results
 
