@@ -325,6 +325,7 @@ def parsed_feature() -> dict[str, Any]:
         "chosen_skin_color": Value("string"),
         "chosen_body_type": Value("string"),
         "chosen_orientation": Value("string"),
+        "chosen_gender_identity": Value("string"),
         "chosen_politics": Value("string"),
         "chosen_phone": Value("string"),
         "is_refusal": Value("bool"),
